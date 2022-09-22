@@ -189,3 +189,99 @@ typedef struct _KEYBOARD_INPUT_DATA {
     ULONG ExtraInformation;
 } KEYBOARD_INPUT_DATA, *PKEYBOARD_INPUT_DATA;
 ```
+We can use two forms to get at the member of this structure, either keys[0] or keys->. Theoretically SystemBuffer can be a pointer to an array of structures, one per key, we assume it points to only a single key structure. We print out the member MakeCode which give us the scan code of the key pressed. 
+
+The scan code and the ascii code are two different kettles of fish. Each key on the keyboard is given a number depending upon its physical placement. Thus the key a is given a number 30, the key next to it s is given a number of 31, etc. The flags member tells us whether the key is pressed or release. 0 means key press, 1 means key left.
+
+Thus our code gets called twice, once for a key press, once for a key release, The status member is 0 and the PendingReturned member is 1 as the IRP is yet pending, things are not over. If we do not call the function `IoMarkIrpPending`, then the final user program waiting for the keystroke will not receive it and the whole system will hang.
+
+As the IRP is now getting over, the variable numPendingIrps will now be reduced by 1. Thus it will have a value of zero. Remember in function abcRead we increase it by 1, here we reduce it by one because from our perspective the IRP is over. Now we check if the scan code is 30 or a. We increase it by 1 to 31 or s.
+
+Thus each time we press the key a, we see a s instead. Finally the key is placed in the SystemBuffer variable and if any filter driver changes it there, the final user space program will see this value. If the original key pressed was a, and a filter driver before us changed it to b, we would see a b and have no way of knowing what the original key was.
+
+Finally at some point in time we will Unload our driver. We have a small problem as when we write y –u and press enter, our code will get called when the enter key is pressed. This enter key has a scan code of 28 and our functions get called twice, once for key press once for key release.
+
+Thus when you look at the output, the key press for enter gets called, followed by DriverUnload. If we remove ourselves now from the list of keyboard filter drivers, the system will yet call us for the return key release. As we have unloaded ourselves, we will get a blue screen of death.
+
+To confirm this the numPendingIrps has a value of 1. So we first Detach our device using function `IoDetachDevice` which is passed the actual device pointer pactualkeyboarddevice. Then we use a empty while loop until variable `numPendingIrps` becomes `0`. Had we placed a `DbgPrint` statement in the `while` loop, it would go on about a 100 times.
+
+Once we get out of the while loop, we no that all pending IRP’s are done and we can safely Delete the original device object created.
+### Part 3
+```c
+NTSTATUS abcRead(PDEVICE_OBJECT pDeviceObject, PIRP pIrp) {
+    long status;
+    PIO_STACK_LOCATION curr = IoGetCurrentIrpStackLocation(pIrp);
+    PIO_STACK_LOCATION next = IoGetNextIrpStackLocation(pIrp);
+    * next = * curr;
+    IoSetCompletionRoutine(pIrp, abcReadOver, 0, 1, 0, 0);
+    numPendingIrps++;
+    status = IoCallDriver(pactualkeyboarddevice, pIrp);
+    DbgPrint("abcRead status=%d PendingReturned=%d STATUS_PENDING=%d", status, pIrp -> PendingReturned, STATUS_PENDING);
+    return status;
+}
+```
+In this program we display the value of STATUS_PENDING which is 259 and also do not use the long function name IoCopyCurrentIrpStackLocationToNext. What we instead do is use the familiar function IoGetCurrentIrpStackLocation to give us the IO_STACK_LOCATION pointer for the current Irp.
+
+Each Irp has a stack location as one of its members and the function IoGetNextIrpStackLocation give us the stack location of the driver below us or the next driver. Thus curr is the stack data for us and next is the stack data for the driver below us or the one we will call.
+
+We have to copy the data or structure that curr is pointing to, over the data that next is pointing to. If we call our lowed driver now, when he calls IoGetCurrentIrpStackLocation, he will get the same value that we got in next. When we say *next we are overwriting the structure that next is pointing to with data from the structure curr is pointing to.
+
+This is how we send our IO_STACK_LOCATION structure to the next driver.
+
+### Part 4
+file `r.c`
+```c
+NTSTATUS abcRead(PDEVICE_OBJECT pDeviceObject, PIRP pIrp) {
+    long status;
+    PIO_STACK_LOCATION curr = ((pIrp) -> Tail.Overlay.CurrentStackLocation);
+    PIO_STACK_LOCATION next = ((pIrp) -> Tail.Overlay.CurrentStackLocation - 1);
+    * next = * curr; {
+        PIO_STACK_LOCATION _irpSp;
+        __irpSp = pIrp -> Tail.Overlay.CurrentStackLocation - 1;
+        __irpSp -> CompletionRoutine = abcReadOver;
+        __irpSp -> Context = 0;
+        __irpSp -> Control = 0;
+        if (1) __irpSp -> Control = 0x40;
+        if (0) __irpSp -> Control |= 0x80;
+        if (0) __irpSp -> Control |= 0x20;
+    }
+    numPendingIrps++;
+    status = IofCallDriver(pactualkeyboarddevice, pIrp);
+    DbgPrint("abcRead status=%d PendingReturned=%d STATUS_PENDING=%d", status, pIrp -> PendingReturned, ((NTSTATUS) 0x00000103 L));
+    return status;
+}
+```
+One of the things we forget to tell you is that most IO functions are macros. Thus we ran our b.bat file with the cl /P option. What we are showing you is the preprocessed output from r.i.
+
+The macro `IoGetCurrentIrpStackLocation` simply returns the `CurrentStackLocation` member of type `PIO_STACK_LOCATION`. We have a big union Tail that has a structure `Overlay` that has the above member. This member actually points to a series of structures that look like `IO_STACK_LOCATION`.
+
+If we subtract 1 from here we are actually subtracting sizeof `IO_STACK_LOCATION`. This location is  where the next driver will look for its stack. The `IO_STACK_LOCATION` structures for all the drivers are stored back to back.
+
+The IoSetCompletionRoutine last three parameters need to be explained. If true or 1, they signify whether the function should be called on completion, error or cancel. By specifying true for the third last parameter only the function will be called only on completion not if the IRP got cancelled or a error happened.
+
+This function is also a macro but breaks up into more code. Lets understand the code generated. A dummy variable __irpSp of type PIO_STACK_LOCATION get created first. We set it to the same `CurrentStackLocation` member of the next drivers stack and not the current drivers.
+ 
+The `IO_STACK_LOCATION` member `CompletionRoutine` we set to the function that needs to be called. The parameter Context is set to zero as we have supplied no context to be passed to the completion function.
+
+The Control member is set to 0 and depending upon which of the last three parameters we have set to 1, a certain bit in the Control flags is set to 1. If the `OnCompletion` parameter is set to 1, the `Control` bit is ORed with `0x40`. As the last two parameters are false, the if statements are false. If they were true, the `Control` member would be ORed with `0x80` and `0x20`.
+
+Thus the set completion function simply tells the next driver which function is to be called, the context to be passed to it and also sets the flags bits. The driver to be called will look at its `IO_STACK_LOCATION` structure to figure out what to do.
+### PART5
+file `r.c`
+```c
+NTSTATUS abcRead(PDEVICE_OBJECT pDeviceObject, PIRP pIrp) {
+    long status; {
+        PIO_STACK_LOCATION __irpSp;
+        PIO_STACK_LOCATION __nextIrpSp;
+        __irpSp = pIrp -> Tail.Overlay.CurrentStackLocation;
+        __nextIrpSp = pIrp -> Tail.Overlay.CurrentStackLocation - 1;
+        memcpy(__nextIrpSp, __irpSp, (LONG_PTR) & ((IO_STACK_LOCATION * ) 0) -> CompletionRoutine);
+        __nextIrpSp -> Control = 0;
+    }
+    IoSetCompletionRoutine(pIrp, abcReadOver, 0, 1, 0, 0);
+    numPendingIrps++;
+    status = IofCallDriver(pactualkeyboarddevice, pIrp);
+    DbgPrint("abcRead status=%d PendingReturned=%d", status, pIrp -> PendingReturned);
+    return status;
+}
+```
