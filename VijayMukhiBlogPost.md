@@ -136,28 +136,28 @@ abcRead status=259 PendingReturned=0 STATUS_PENDING=259
 Driver Unload numPendingIrps=1
 abcReadOver ScanCode 28 Flags=1 PendingReturned=1 Status=0
 ```
-The program y.c has no changes at all. Each time we start a new chapter we simply repeat the y.c program even though it has not changed since the last chapter. The program r.c is however totally different. Each time you press the A key from the keyboard in any application, the key s is shown instead. How this magic happens is what this chapter is all about.
+The program `y.c` has no changes at all. Each time we start a new chapter we simply repeat the `y.c` program even though it has not changed since the last chapter. The program `r.c` is however totally different. Each time you press the `A` key from the keyboard in any application, the key `S` is shown instead. How this magic happens is what this chapter is all about.
 Lets start with the DriverEntry program. We set the `MajorFunction` `Read` member to the function `abcRead`. For the nosy ones out there, the macro `IRP_MJ_READ` has a value of 3. Thus each time a read request is send to our driver, the function `abcRead` gets called. The read request in our case will be send when we press a key on the keyboard.
-The `IoCreateDevice` function is always used to create a named device. In this case we specify null as our device name. The fourth parameter is the device type. This parameter tells the system on what type of device we would like to model our driver on.
+The `IoCreateDevice` function is always used to create a named device. In this case we specify `null` as our device name. The fourth parameter is the device type. This parameter tells the system on what type of device we would like to model our driver on.
 
-Normally we specify either 0, `FILE_DEVICE_UNKNOWN` or a number that we create bearing in mind that  Microsoft has reserved the first 32767 numbers for themselves. The value of  the macro `FILE_DEVICE_KEYBOARD` is `0xb`. The rest of the parameters are what they always have been and the last is the address of  the device object that just got created. We are modeling ourselves on a keyboard driver. 
+Normally we specify either 0, `FILE_DEVICE_UNKNOWN` or a number that we create bearing in mind that  Microsoft has reserved the first **32767** numbers for themselves. The value of  the macro `FILE_DEVICE_KEYBOARD` is `0xb`. The rest of the parameters are what they always have been and the last is the address of  the device object that just got created. We are modeling ourselves on a keyboard driver. 
 
 The only field of the `DEVICE_OBJECT` structure we set is `Flags`. There are lots of options here. We only set one bit `DO_BUFFERED_IO`. This flag determines how the I/O manager deals with user buffers when it transfers data to the driver. The other value that can be used is non buffer or `DO_DIRECT_IO` which as the name suggests does not use any buffers at all. 
 The driver we create is called a filter driver. We are sitting above the keyboard driver. Thus each time we press a key we get called first, then we pass the request on to the lower driver. This could be the actual keyboard driver or another filter driver. When the lowest level driver handles the request, it gets send up all the way and once again our driver code gets called.
 
 Thus we get called twice, Once in the beginning, once on the way back up. We have to set the `Flags` field so that it contains the same `Flags` as the driver below us. We all have to share the same flags or else we get a Blue Screen of Death. It does not make sense for us to use `Direct_IO` and the lower level driver uses `Buffering`.
 
-As the actual keyboard driver uses buffering, we use buffering also. Now we need to tell the system, to actually put us into the keyboard loop. Each time a key is pressed our code  in this case the function abcRead. We first create a `UNICODE_STRING` for the keyboard driver whose name is `KeyboardClass0`.
+As the actual keyboard driver uses buffering, we use buffering also. Now we need to tell the system, to actually put us into the keyboard loop. Each time a key is pressed our code  in this case the function `abcRead`. We first create a `UNICODE_STRING` for the keyboard driver whose name is `KeyboardClass0`.
 
 We then use the `IoAttachDevice` which attaches our device that we specify as the first parameter pgenericdevice, the driver object that we created. The second parameter is the name of the device to attach to the keyboard device. The last is a pointer to a `DEVICE_OBJECT` that this function will initialize. It is this pointer that represents the attachment to keyboard driver.
 To create a filter driver we have to follow a two stage process. We first create a device and attach this device to the keyboard driver.
 
-The attachment of our driver is at the top of all the existing drivers for the keyboard. Now each time we press a key on the keyboard the abcRead function gets called. We receive a Interrupt Request Packet or IRP which is the heart of passing stuff from one device driver to another.
+The attachment of our driver is at the top of all the existing drivers for the keyboard. Now each time we press a key on the keyboard the `abcRead` function gets called. We receive a Interrupt Request Packet or IRP which is the heart of passing stuff from one device driver to another.
 
 This structure IRP is extremely large and we will study it in detail. The IRP that we get we need to pass it on to the next lower down driver. This is like a 4 x 100 meter race. Each runner has to pass the baton to the next.
-Thus we use a function that has a very large name `IoCopyCurrentIrpStackLocationToNext` which copies the IRP passed to us to a area of memory which the driver below us will read when it is called after we finish. Thus in the abcRead function we first need to pass the IRP to the next driver.
+Thus we use a function that has a very large name `IoCopyCurrentIrpStackLocationToNext` which copies the IRP passed to us to a area of memory which the driver below us will read when it is called after we finish. Thus in the `abcRead` function we first need to pass the IRP to the next driver.
 
-When the abcRead function is called the IRP is being passed down the line. They could be 10 filter drivers between us and the final keyboard driver. Thus as of now the actual keyboard driver has not been called. After it gets called, the whole process will repeat and the IRP will now move up instead of down.
+When the `abcRead` function is called the IRP is being passed down the line. They could be 10 filter drivers between us and the final keyboard driver. Thus as of now the actual keyboard driver has not been called. After it gets called, the whole process will repeat and the IRP will now move up instead of down.
 
 When the IRP is moving up, the system will need to call a function in us. This function name we specify using the function `IoSetCompletionRoutine`. The first parameter is the all important IRP, the second is the name of the function to be called, `abcReadOver`, the third is the address of any parameters that we want passed to the function.
 
@@ -208,9 +208,9 @@ NTSTATUS abcRead(PDEVICE_OBJECT pDeviceObject, PIRP pIrp) {
 ```
 In this program we display the value of `STATUS_PENDING` which is `259` and also do not use the long function name `IoCopyCurrentIrpStackLocationToNext`. What we instead do is use the familiar function `IoGetCurrentIrpStackLocation` to give us the `IO_STACK_LOCATION` pointer for the current `Irp`.
 
-Each Irp has a stack location as one of its members and the function `IoGetNextIrpStackLocation` give us the stack location of the driver below us or the next driver. Thus curr is the stack data for us and next is the stack data for the driver below us or the one we will call.
+Each Irp has a stack location as one of its members and the function `IoGetNextIrpStackLocation` give us the stack location of the driver below us or the next driver. Thus `curr` is the stack data for us and next is the stack data for the driver below us or the one we will call.
 
-We have to copy the data or structure that curr is pointing to, over the data that next is pointing to. If we call our lowed driver now, when he calls `IoGetCurrentIrpStackLocation`, he will get the same value that we got in next. When we say *next we are overwriting the structure that next is pointing to with data from the structure curr is pointing to.
+We have to copy the data or structure that curr is pointing to, over the data that next is pointing to. If we call our lowed driver now, when he calls `IoGetCurrentIrpStackLocation`, he will get the same value that we got in next. When we say `*next` we are overwriting the structure that next is pointing to with data from the structure `curr` is pointing to.
 This is how we send our `IO_STACK_LOCATION` structure to the next driver.
 
 ### Part 4
