@@ -1,4 +1,4 @@
-# Writing a Keyboard Filter - Driver by Vijay Mukhi #
+# Writing a Keyboard Filter - Driver by Vijay Mukhi (edited by Martin N) #
 ### Part 1
 file `y.c`
 ```c
@@ -179,7 +179,7 @@ typedef struct _KEYBOARD_INPUT_DATA {
 ```
 We can use two forms to get at the member of this structure, either `keys[0]` or `keys->`. Theoretically `SystemBuffer` can be a pointer to an array of structures, one per key, we assume it points to only a single key structure. We print out the member MakeCode which give us the scan code of the key pressed. 
 
-The scan code and the ascii code are two different kettles of fish. Each key on the keyboard is given a number depending upon its physical placement. Thus the key a is given a number `30`, the key next to it s is given a number of `31`, etc. The flags member tells us whether the key is **pressed** or **release**. `0` means key press, `1` means key left.
+The scan code and the ascii code are two different kettles of fish. Each key on the keyboard is given a number depending upon its physical placement. Thus the key a is given a number `30`, the key next to it s is given a number of `31`, etc. The flags member tells us whether the key is **pressed** or **release**. `0` means key press, `1` means key released.
 
 Thus our code gets called twice, once for a key press, once for a key release, The `status` member is `0` and the `PendingReturned` member is `1` as the IRP is yet pending, things are not over. If we do not call the function `IoMarkIrpPending`, then the final user program waiting for the keystroke will not receive it and the whole system will hang.
 As the IRP is now getting over, the variable `numPendingIrps` will now be reduced by `1`. Thus it will have a value of zero. Remember in function `abcRead` we increase it by `1`, here we reduce it by one because from our perspective the IRP is over. Now we check if the scan code is `30` or `a`. We increase it by `1` to `31` or `s`.
@@ -236,11 +236,11 @@ NTSTATUS abcRead(PDEVICE_OBJECT pDeviceObject, PIRP pIrp) {
     return status;
 }
 ```
-One of the things we forget to tell you is that most IO functions are macros. Thus we ran our b.bat file with the cl /P option. What we are showing you is the preprocessed output from r.i.
+One of the things we forget to tell you is that most IO functions are macros. Thus we ran our `b.bat` file with the cl /P option. What we are showing you is the preprocessed output from r.i.
 
 The macro `IoGetCurrentIrpStackLocation` simply returns the `CurrentStackLocation` member of type `PIO_STACK_LOCATION`. We have a big union Tail that has a structure `Overlay` that has the above member. This member actually points to a series of structures that look like `IO_STACK_LOCATION`.
 
-If we subtract 1 from here we are actually subtracting sizeof `IO_STACK_LOCATION`. This location is  where the next driver will look for its stack. The `IO_STACK_LOCATION` structures for all the drivers are stored back to back.
+If we subtract `1` from here we are actually subtracting sizeof `IO_STACK_LOCATION`. This location is  where the next driver will look for its stack. The `IO_STACK_LOCATION` structures for all the drivers are stored back to back.
 The `IoSetCompletionRoutine` last three parameters need to be explained. If true or 1, they signify whether the function should be called on completion, error or cancel. By specifying true for the third last parameter only the function will be called only on completion not if the IRP got cancelled or a error happened.
 
 This function is also a macro but breaks up into more code. Lets understand the code generated. A dummy variable `__irpSp` of type `PIO_STACK_LOCATION` get created first. We set it to the same `CurrentStackLocation` member of the next drivers stack and not the current drivers.
