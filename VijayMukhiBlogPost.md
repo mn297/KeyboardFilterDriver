@@ -1,4 +1,5 @@
-# Writing a Keyboard Filter - Driver by Vijay Mukhi (edited by Martin N) #
+# Writing a Keyboard Filter - Driver by Vijay Mukhi #
+(edited by Martin N)
 ### Part 1
 file `y.c`
 ```c
